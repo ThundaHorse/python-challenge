@@ -80,10 +80,9 @@ def csv_to_markdown_table(csv_filepath, markdown_filepath):
                     )
 
                     cleaned_row["product_name"] = (
-                        cleaned_row["product_name"].strip('"').capitalize()
-                        if "$" in cleaned_row["product_name"]
-                        else cleaned_row["product_name"]
+                        cleaned_row["product_name"].replace('"', "").capitalize()
                     )
+
                     cleaned_row["category"] = cleaned_row["category"].capitalize()
 
                     # Date format error, manual fix
