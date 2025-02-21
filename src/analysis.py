@@ -1,118 +1,96 @@
-import csv
 import sys
-from datetime import datetime
-import re
+from utils import CSVHelper
+import requests
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+api_key = os.getenv("API_KEY")
 
 
 def csv_to_markdown_table(csv_filepath, markdown_filepath):
-    """
-    Convert desired CSV file to Markdown table and save it to a report.md.
+    """Converts a CSV file into a Markdown table."""
+    csv_helper = CSVHelper(csv_filepath)
+    rows = csv_helper.read_csv()
+    headers = [
+        "product_name",
+        "our_price",
+        "category",
+        "current_stock",
+        "restock_threshold",
+        "date",
+    ]
 
-    Args:
-        csv_filepath (str): The path to the input CSV file.
-        markdown_filepath (str): The path to the output Markdown file.
-    """
-
-    # Error Handling
     try:
-        with (
-            open(csv_filepath, "r") as csvfile,
-            open(markdown_filepath, "w", newline="") as mdfile,
-        ):
-            # Set reader to read from dict
-            # Handle cases where csv is not properly delimited
-            # i.e. Rooibos Tea was not properly delimited
-            reader = csv.DictReader(csvfile, quoting=csv.QUOTE_NONE, escapechar="\\")
+        with open(markdown_filepath, "w", newline="") as mdfile:
+            data_quality_paragraph = """The following quality issues were found in the CSV file
+            - product_name had wrapping '' marks
+            - our_price as formatting of pricing was not consistent ($ were included in not all)
+            - current_stock and restock_threshold had empty values
+            - Dates were not standardized
+            """
+            cleanup_paragrah = """The following clean up was performed:
+            - Capitalize product_name, remove wrapping '' marks
+            - Standardized display for our_price by removing $ sign
+            - Capitalized category
+            - For values that were empty, by default added ??? placeholder
+            - Formatted dates to be uniform (mm-dd-yyy)"""
 
-            # Extract headers
-            # Set desired information
-            headers = [
-                "product_name",
-                "our_price",
-                "category",
-                "current_stock",
-                "restock_threshold",
-                "date",
-            ]
+            mdfile.write(data_quality_paragraph + "\n")
+            mdfile.write(cleanup_paragrah + "\n")
+            mdfile.write("\nCleaned up Data Summary\n")
 
-            # Set initial Row
             mdfile.write("| " + " | ".join(headers) + " |\n")
             mdfile.write("| " + " | ".join(["---"] * len(headers)) + " |\n")
 
-            for row in reader:
-                cleaned_row = {k: v for k, v in row.items() if k is not None}
+            for row in rows:
+                """Grab date before cleaning row"""
+                date_string = list(
+                    {k: v for k, v in row.items() if k is None}.values()
+                )[0][0]
 
-                try:
-                    date_string = list(
-                        {k: v for k, v in row.items() if k is None}.values()
-                    )[0][0]
+                """Clean row"""
+                row = {k: v for k, v in row.items() if k}
 
-                    # Clean up formatting for our_price, current_stock, and restock_threshold if no value & remove dollar sign if present
-                    cleaned_row["our_price"] = (
-                        cleaned_row["our_price"].replace("$", " ")
-                        if "$" in cleaned_row["our_price"]
-                        else cleaned_row["our_price"]
-                    )
-                    cleaned_row["our_price"] = (
-                        "0"
-                        if cleaned_row["our_price"] == ""
-                        else cleaned_row["our_price"]
-                    )
-                    cleaned_row["current_stock"] = (
-                        cleaned_row["current_stock"].replace("$", " ")
-                        if "$" in cleaned_row["current_stock"]
-                        else cleaned_row["current_stock"]
-                    )
-                    cleaned_row["current_stock"] = (
-                        "0"
-                        if cleaned_row["current_stock"] == ""
-                        else cleaned_row["current_stock"]
-                    )
-                    cleaned_row["restock_threshold"] = (
-                        cleaned_row["restock_threshold"].replace("$", " ")
-                        if "$" in cleaned_row["restock_threshold"]
-                        else cleaned_row["restock_threshold"]
-                    )
-                    cleaned_row["restock_threshold"] = (
-                        "0"
-                        if cleaned_row["restock_threshold"] == ""
-                        else cleaned_row["restock_threshold"]
-                    )
+                """Assign values"""
+                row["our_price"] = csv_helper.clean_value(row.get("our_price", ""))
+                row["current_stock"] = csv_helper.clean_value(
+                    row.get("current_stock", "")
+                )
+                row["restock_threshold"] = csv_helper.clean_value(
+                    row.get("restock_threshold", "")
+                )
+                row["product_name"] = (
+                    row.get("product_name", "").replace('"', "").capitalize()
+                )
+                row["category"] = row.get("category", "").capitalize()
+                row["date"] = csv_helper.format_date(date_string)
 
-                    cleaned_row["product_name"] = (
-                        cleaned_row["product_name"].replace('"', "").capitalize()
-                    )
-
-                    cleaned_row["category"] = cleaned_row["category"].capitalize()
-
-                    # Date format error, manual fix
-                    if "/" in date_string:
-                        date_string = date_string.replace("/", "-")
-                        date_object = datetime.strptime(date_string, "%m-%d-%Y")
-                        formatted_date_string = date_object.strftime("%m-%d-%Y")
-                    else:
-                        date_object = datetime.strptime(date_string, "%Y-%m-%d")
-                        formatted_date_string = date_object.strftime("%m-%d-%Y")
-
-                    cleaned_row["date"] = formatted_date_string
-                    mdfile.write(
-                        "| " + " | ".join(cleaned_row[h] for h in headers) + " |\n"
-                    )
-                except Exception as e:
-                    print(f"An error occurred: {e}")
-
-    except FileNotFoundError:
-        print(f"Error: Input file '{csv_filepath}' not found.")
+                """Write to report.md"""
+                mdfile.write(
+                    "| " + " | ".join(row.get(h, "") for h in headers) + " |\n"
+                )
+            mdfile.write("\n")
+            mdfile.write("Insights: \n")
+            mdfile.write("COMING SOON")
     except Exception as e:
-        print(f"An error occurred when parsing: {e}")
+        print(f"An error occurred while writing Markdown: {e}")
+
+
+def get_pricing_info():
+    api_url = "https://api.api-ninjas.com/v1/commodityprice?name={}".format("coffee")
+    response = requests.get(api_url, headers={"X-Api-Key": api_key})
+    if response.status_code == requests.codes.ok:
+        print(response.text)
+    else:
+        print("Error:", response.status_code, response.text)
 
 
 if __name__ == "__main__":
     if len(sys.argv) == 2:
         input_csv_file = sys.argv[1]
         output_file = "report.md"
-        csv_to_markdown_table(
-            csv_filepath=input_csv_file, markdown_filepath=output_file
-        )
+        csv_to_markdown_table(input_csv_file, output_file)
+        get_pricing_info()
     else:
         print("Please provide an input csv file.")
