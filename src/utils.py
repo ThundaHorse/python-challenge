@@ -25,11 +25,20 @@ class CSVHelper:
             return []
 
     @staticmethod
-    def clean_value(value, remove_dollar=True, default="???"):
+    def clean_value(value, remove_dollar=True, default="0"):
         """Cleans numeric values by removing dollar signs and handling empty values."""
+
         if remove_dollar and "$" in value:
             value = value.replace("$", "").strip()
-        return value if value else default
+
+        try:
+            if float(value):
+                return value
+            else:
+                return default
+        except ValueError as e:
+            print(e)
+            return default
 
     @staticmethod
     def format_date(date_string):
